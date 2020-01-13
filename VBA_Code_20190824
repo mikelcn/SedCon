@@ -1,0 +1,411 @@
+Dim ncol As Integer
+Dim nrow As Integer
+Dim netcol As Integer
+Dim depcol As Integer
+Dim erocol As Integer
+Dim Sname As String
+Sub Step_lenght()
+    '1) Finding Data Sheet
+    Dim S As Worksheet
+    Sname = ""
+    Application.ScreenUpdating = False
+    For Each S In ActiveWorkbook.Sheets
+        If S.Cells(1, 1).Value = "FID_" Then
+            OK = False
+            ncol = 1
+            ncol = S.Cells(1, Columns.Count).End(xlToLeft).Column
+            For depcol = 1 To ncol
+            If S.Cells(1, depcol).Value = "Depo_Vol" Then
+                OK = True
+                Exit For
+            End If
+            Next depcol
+            If (depcol <> 1) And (OK = True) Then
+                Sname = S.Name
+            End If
+        End If
+    Next
+    Application.ScreenUpdating = True
+    '2) Table's dimensions
+    nrow = Worksheets(Sname).Cells(Rows.Count, 1).End(xlUp).Row
+    ncol = Worksheets(Sname).Cells(1, Columns.Count).End(xlToLeft).Column
+    '3) Identify input data columns
+    'Finding "Net_Vol" column
+    Call findcol("Net_Vol", netcol)
+    'Finding "Depo_Vol" column
+    Call findcol("Depo_Vol", depcol)
+    'Finding "Ero_Vol" column
+    Call findcol("Ero_Vol", erocol)
+    '4) Create new columns for writing output results
+    With Worksheets(Sname)
+        Cells(1, ncol + 1).Value = "Type"
+        Cells(1, ncol + 2).Value = "Code"
+        Cells(1, ncol + 3).Value = "min_explains_dep"
+        Cells(1, ncol + 4).Value = "max_explains_dep"
+        Cells(1, ncol + 5).Value = "End_found?"
+        Cells(1, ncol + 6).Value = "Accumulated_Volume"
+        Cells(1, ncol + 7).Value = "Accumulated_strips"
+        Cells(1, ncol + 8).Value = "Balanced?"
+        Cells(1, ncol + 9).Value = "Depmin_Remaining_Volume"
+        Cells(1, ncol + 10).Value = "Depmax_Remaining_Volume"
+        Cells(1, ncol + 11).Value = "min_explains_ero"
+        Cells(1, ncol + 12).Value = "max_explains_ero"
+        Cells(1, ncol + 13).Value = "End_found?"
+        Cells(1, ncol + 14).Value = "Accumulated_Volume"
+        Cells(1, ncol + 15).Value = "Accumulated_strips"
+        Cells(1, ncol + 16).Value = "Balanced?"
+        Cells(1, ncol + 17).Value = "Eromin_Remaining_Volume"
+        Cells(1, ncol + 18).Value = "Eromax_Remaining_Volume"
+        Cells(2, ncol + 1).Value = -99999
+        Cells(2, ncol + 2).Value = -99999
+    End With
+    '5) Coding boundaries
+    v1 = Worksheets(Sname).Cells(2, netcol).Value
+    typ = -99
+    For cell = 3 To (nrow)
+        v0 = Worksheets(Sname).Cells(cell, netcol).Value
+        Select Case v1
+            Case Is < 0
+                Select Case v0
+                    Case Is > 0
+                        typ = 1
+                    Case Is < 0
+                        typ = 4
+                    Case Is = 0
+                        typ = 0
+                End Select
+            Case Is > 0
+                Select Case v0
+                    Case Is > 0
+                        typ = 2
+                    Case Is < 0
+                        typ = 3
+                    Case Is = 0
+                        typ = 0
+                End Select
+            Case Is = 0
+                Select Case v0
+                    Case Is > 0
+                        typ = 0
+                    Case Is < 0
+                        typ = 0
+                    Case Is = 0
+                        typ = 5
+                End Select
+        End Select
+        'Writing boundary type
+        Worksheets(Sname).Cells(cell, ncol + 1).Value = typ
+        v1 = v0
+        Select Case typ
+            Case 3
+                Worksheets(Sname).Cells(cell, ncol + 2).Value = 0
+            Case 4
+                Worksheets(Sname).Cells(cell, ncol + 2).Value = -2
+            Case 5
+                Worksheets(Sname).Cells(cell, ncol + 2).Value = 3
+            Case 2
+                Worksheets(Sname).Cells(cell, ncol + 2).Value = 2
+            Case 1
+                Worksheets(Sname).Cells(cell, ncol + 2).Value = 1
+                'Calculating Step-Length
+                SumMin = 0
+                SumMax = 0
+                Sum = 0
+                cellsum = cell
+                read = 0
+                '6) Accumulating deposition Volume downstream
+                Do While read >= 0
+                    If cellsum <= nrow Then
+                        read = Worksheets(Sname).Cells(cellsum, netcol).Value
+                        If read < 0 Then
+                            Worksheets(Sname).Cells(cell, ncol + 5).Value = "end"
+                            Worksheets(Sname).Cells(cell, ncol + 6).Value = Sum
+                            Worksheets(Sname).Cells(cell, ncol + 7).Value = cellsum - cell
+                            Exit Do
+                        End If
+                        Sum = Sum + read
+                        cellsum = cellsum + 1
+                    Else
+                        With Worksheets(Sname)
+                            .Cells(cell, ncol + 5).Value = "Not end"
+                            .Cells(cell, ncol + 6).Value = Sum
+                            .Cells(cell, ncol + 7).Value = cellsum - cell - 1
+                        End With
+                        Exit Do
+                    End If
+                Loop
+                Length = 0
+                SumMin = Sum
+                SumMax = Sum
+                celllenght = -1
+                '7) Balancing volume and counting strips
+                For celllength = (cell - 1) To 2 Step -1
+                    Length = Length + 10
+                    If SumMax > 0 Then
+                        If SumMin > 0 Then
+                            SumMin = SumMin + Worksheets(Sname).Cells(celllength, erocol).Value
+                            If SumMin <= 0 Then
+                               Worksheets(Sname).Cells(cell, ncol + 3).Value = Length
+                               Worksheets(Sname).Cells(cell, ncol + 9).Value = SumMin
+                            End If
+                        End If
+                        SumMax = SumMax + Worksheets(Sname).Cells(celllength, netcol).Value
+                    End If
+                    If SumMax <= 0 Then
+                        Worksheets(Sname).Cells(cell, ncol + 4).Value = Length
+                        Worksheets(Sname).Cells(cell, ncol + 8).Value = "Balanced"
+                        Worksheets(Sname).Cells(cell, ncol + 10).Value = SumMax
+                        Exit For
+                    End If
+                Next celllength
+                If celllength = 1 Then
+                    Worksheets(Sname).Cells(cell, ncol + 4).Value = Length
+                    Worksheets(Sname).Cells(cell, ncol + 8).Value = "Not Balanced"
+                    Worksheets(Sname).Cells(cell, ncol + 10).Value = SumMax
+                    If SumMin > 0 Then
+                        Worksheets(Sname).Cells(cell, ncol + 3).Value = Length
+                        Worksheets(Sname).Cells(cell, ncol + 9).Value = SumMin
+                    End If
+                End If
+                SumMin = 0
+                SumMax = 0
+                Sum = 0
+                cellsum = cell
+                read = 0
+                '8) Accumulating erosive volume upstream
+                Do While read <= 0
+                    If cellsum >= 3 Then
+                        read = Worksheets(Sname).Cells(cellsum - 1, netcol).Value
+                        If read > 0 Then
+                            Worksheets(Sname).Cells(cell, ncol + 13).Value = "end"
+                            Worksheets(Sname).Cells(cell, ncol + 14).Value = Sum
+                            Worksheets(Sname).Cells(cell, ncol + 15).Value = cell - cellsum
+                            Exit Do
+                        End If
+                        Sum = Sum + read
+                        cellsum = cellsum - 1
+                    Else
+                        With Worksheets(Sname)
+                            .Cells(cell, ncol + 13).Value = "Not end"
+                            .Cells(cell, ncol + 14).Value = Sum
+                            .Cells(cell, ncol + 15).Value = cell - cellsum
+                        End With
+                        Exit Do
+                    End If
+                Loop
+                Length = 0
+                SumMin = Sum
+                SumMax = Sum
+                celllength = -1
+                9) 'Balancing Volume
+                For celllength = cell To nrow
+                    Length = Length + 10
+                    If SumMax < 0 Then
+                        If SumMin < 0 Then
+                            SumMin = SumMin + Worksheets(Sname).Cells(celllength, depcol).Value
+                            If SumMin >= 0 Then
+                                Worksheets(Sname).Cells(cell, ncol + 11).Value = Length
+                                Worksheets(Sname).Cells(cell, ncol + 17).Value = SumMin
+                            End If
+                        End If
+                        SumMax = SumMax + Worksheets(Sname).Cells(celllength, netcol).Value
+                    End If
+                    If SumMax >= 0 Then
+                        Worksheets(Sname).Cells(cell, ncol + 12).Value = Length
+                        Worksheets(Sname).Cells(cell, ncol + 16).Value = "Balanced"
+                        Worksheets(Sname).Cells(cell, ncol + 18).Value = SumMax
+                        Exit For
+                    End If
+                Next celllength
+                If celllength = nrow + 1 Then
+                    Worksheets(Sname).Cells(cell, ncol + 12).Value = Length
+                    Worksheets(Sname).Cells(cell, ncol + 16).Value = "Not Balanced"
+                    If SumMin < 0 Then
+                        Worksheets(Sname).Cells(cell, ncol + 11).Value = Length
+                    End If
+                End If
+       End Select
+    Next cell
+    '10) Copying results to new Sheets
+    On Error Resume Next
+    Application.DisplayAlerts = False
+    Worksheets("Summary").Delete
+    Worksheets("DepSort").Delete
+    Worksheets("EroSort").Delete
+    Application.DisplayAlerts = True
+    Worksheets.Add After:=Worksheets(Sname)
+    ActiveSheet.Name = "EroSort"
+    Worksheets.Add After:=Worksheets(Sname)
+    ActiveSheet.Name = "DepSort"
+    Worksheets.Add After:=Worksheets(Sname)
+    ActiveSheet.Name = "Summary"
+    With Worksheets("Summary")
+        .Cells(1, 1) = "FID_"
+        .Cells(1, 2).Value = "Type"
+        .Cells(1, 3).Value = "Code"
+        .Cells(1, 4).Value = "min_explains_dep"
+        .Cells(1, 5).Value = "max_explains_dep"
+        .Cells(1, 6).Value = "End_found?"
+        .Cells(1, 7).Value = "Accumulated_Volume"
+        .Cells(1, 8).Value = "Accumulated_strips"
+        .Cells(1, 9).Value = "Balanced?"
+        .Cells(1, 10).Value = "Depmin_Remaining_Volume"
+        .Cells(1, 11).Value = "Depmax_Remaining_Volume"
+        .Cells(1, 12).Value = "min_explains_ero"
+        .Cells(1, 13).Value = "max_explains_ero"
+        .Cells(1, 14).Value = "End_found?"
+        .Cells(1, 15).Value = "Accumulated_Volume"
+        .Cells(1, 16).Value = "Accumulated_strips"
+        .Cells(1, 17).Value = "Balanced?"
+        .Cells(1, 18).Value = "Eromin_Remaining_Volume"
+        .Cells(1, 19).Value = "Eromax_Remaining_Volume"
+    End With
+    With Worksheets("DepSort")
+        .Cells(1, 1) = "FID_"
+        .Cells(1, 2).Value = "Type"
+        .Cells(1, 3).Value = "Code"
+        .Cells(1, 4).Value = "min_explains_dep"
+        .Cells(1, 5).Value = "max_explains_dep"
+        .Cells(1, 6).Value = "End_found?"
+        .Cells(1, 7).Value = "Accumulated_Volume"
+        .Cells(1, 8).Value = "Accumulated_strips"
+        .Cells(1, 9).Value = "Balanced?"
+        .Cells(1, 10).Value = "Depmin_Remaining_Volume"
+        .Cells(1, 11).Value = "Depmax_Remaining_Volume"
+        .Cells(1, 12).Value = "min_explains_ero"
+        .Cells(1, 13).Value = "max_explains_ero"
+        .Cells(1, 14).Value = "End_found?"
+        .Cells(1, 15).Value = "Accumulated_Volume"
+        .Cells(1, 16).Value = "Accumulated_strips"
+        .Cells(1, 17).Value = "Balanced?"
+        .Cells(1, 18).Value = "Eromin_Remaining_Volume"
+        .Cells(1, 19).Value = "Eromax_Remaining_Volume"
+    End With
+    With Worksheets("EroSort")
+        .Cells(1, 1) = "FID_"
+        .Cells(1, 2).Value = "Type"
+        .Cells(1, 3).Value = "Code"
+        .Cells(1, 4).Value = "min_explains_dep"
+        .Cells(1, 5).Value = "max_explains_dep"
+        .Cells(1, 6).Value = "End_found?"
+        .Cells(1, 7).Value = "Accumulated_Volume"
+        .Cells(1, 8).Value = "Accumulated_strips"
+        .Cells(1, 9).Value = "Balanced?"
+        .Cells(1, 10).Value = "Depmin_Remaining_Volume"
+        .Cells(1, 11).Value = "Depmax_Remaining_Volume"
+        .Cells(1, 12).Value = "min_explains_ero"
+        .Cells(1, 13).Value = "max_explains_ero"
+        .Cells(1, 14).Value = "End_found?"
+        .Cells(1, 15).Value = "Accumulated_Volume"
+        .Cells(1, 16).Value = "Accumulated_strips"
+        .Cells(1, 17).Value = "Balanced?"
+        .Cells(1, 18).Value = "Eromin_Remaining_Volume"
+        .Cells(1, 19).Value = "Eromax_Remaining_Volume"
+    End With
+    cell2 = 2
+    For cell = 2 To (nrow)
+        If Worksheets(Sname).Cells(cell, ncol + 1).Value = 1 Then
+            For col = ncol + 1 To ncol + 18
+                 Worksheets("Summary").Cells(cell2, 1).Value = Worksheets(Sname).Cells(cell, 1).Value
+                 Worksheets("Summary").Cells(cell2, col - ncol + 1).Value = Worksheets(Sname).Cells(cell, col).Value
+                 Worksheets("DepSort").Cells(cell2, 1).Value = Worksheets(Sname).Cells(cell, 1).Value
+                 Worksheets("DepSort").Cells(cell2, col - ncol + 1).Value = Worksheets(Sname).Cells(cell, col).Value
+                 Worksheets("EroSort").Cells(cell2, 1).Value = Worksheets(Sname).Cells(cell, 1).Value
+                 Worksheets("EroSort").Cells(cell2, col - ncol + 1).Value = Worksheets(Sname).Cells(cell, col).Value
+            Next col
+            cell2 = cell2 + 1
+        End If
+    Next cell
+    On Error GoTo 0
+    'Drawing Chart
+    Worksheets("Summary").Shapes.AddChart2(216, xlBarClustered).Select
+    Dim LengthString As Integer
+    Dim Gname As String
+    LengthString = Len(ActiveChart.Name) - 8
+    Gname = Right(ActiveChart.Name, LengthString)
+    Dim n As String
+    n = Worksheets("Summary").Cells(Rows.Count, 1).End(xlUp).Row
+    With Worksheets("Summary").Shapes(Gname).Chart
+        .SetSourceData Source:=Range("D:E,L:M")
+        .ChartTitle.Text = "Step_Length"
+        .SeriesCollection(1).XValues = "=Summary!$A$2:$A$" & n
+        .Axes(xlValue).MinimumScale = 0
+        .Axes(xlCategory).ReversePlotOrder = True
+        .SeriesCollection(3).Format.Fill.Visible = msoTrue
+        .SeriesCollection(3).Format.Fill.ForeColor.ObjectThemeColor = msoThemeColorAccent3
+        .SeriesCollection(3).Format.Fill.ForeColor.TintAndShade = 0
+        .SeriesCollection(3).Format.Fill.ForeColor.Brightness = 0.400000006
+        .SeriesCollection(3).Format.Fill.Transparency = 0
+        .SeriesCollection(3).Format.Fill.Solid
+        .SeriesCollection(4).Format.Fill.Visible = msoTrue
+        .SeriesCollection(4).Format.Fill.Visible = msoTrue
+        .SeriesCollection(4).Format.Fill.ForeColor.ObjectThemeColor = msoThemeColorAccent3
+        .SeriesCollection(4).Format.Fill.ForeColor.TintAndShade = 0
+        .SeriesCollection(4).Format.Fill.ForeColor.Brightness = -0.25
+        .SeriesCollection(4).Format.Fill.Transparency = 0
+        .SeriesCollection(4).Format.Fill.Solid
+        .SeriesCollection(1).Format.Fill.Visible = msoTrue
+        .SeriesCollection(1).Format.Fill.ForeColor.ObjectThemeColor = msoThemeColorAccent2
+        .SeriesCollection(1).Format.Fill.ForeColor.TintAndShade = 0
+        .SeriesCollection(1).Format.Fill.ForeColor.Brightness = 0.400000006
+        .SeriesCollection(1).Format.Fill.Transparency = 0
+        .SeriesCollection(1).Format.Fill.Solid
+        .SeriesCollection(2).Format.Fill.Visible = msoTrue
+        .SeriesCollection(2).Format.Fill.ForeColor.ObjectThemeColor = msoThemeColorAccent2
+        .SeriesCollection(2).Format.Fill.ForeColor.TintAndShade = 0
+        .SeriesCollection(2).Format.Fill.ForeColor.Brightness = -0.25
+        .SeriesCollection(2).Format.Fill.Transparency = 0
+        .SeriesCollection(2).Format.Fill.Solid
+    End With
+    'Coloring the length's columns
+    Columns("L:L").EntireColumn.AutoFit
+    Columns("L:L").Select
+    With Selection.Interior
+        .Pattern = xlSolid
+        .PatternColorIndex = xlAutomatic
+        .ThemeColor = xlThemeColorAccent3
+        .TintAndShade = 0.399975585192419
+        .PatternTintAndShade = 0
+    End With
+    Columns("M:M").EntireColumn.AutoFit
+    Columns("M:M").Select
+    With Selection.Interior
+        .Pattern = xlSolid
+        .PatternColorIndex = xlAutomatic
+        .ThemeColor = xlThemeColorAccent3
+        .TintAndShade = -0.249977111117893
+        .PatternTintAndShade = 0
+    End With
+    Columns("D:D").EntireColumn.AutoFit
+    Columns("D:D").Select
+    With Selection.Interior
+        .Pattern = xlSolid
+        .PatternColorIndex = xlAutomatic
+        .ThemeColor = xlThemeColorAccent2
+        .TintAndShade = 0.399975585192419
+        .PatternTintAndShade = 0
+    End With
+    Columns("E:E").EntireColumn.AutoFit
+    Columns("E:E").Select
+    With Selection.Interior
+        .Pattern = xlSolid
+        .PatternColorIndex = xlAutomatic
+        .ThemeColor = xlThemeColorAccent2
+        .TintAndShade = -0.249977111117893
+        .PatternTintAndShade = 0
+    End With
+    'Sorting by accumulated strips
+    Worksheets("DepSort").Range("A:S").Sort key1:=Worksheets("DepSort").Range("H1"), _
+        order1:=xlDescending, Header:=xlYes
+    Worksheets("EroSort").Range("A:S").Sort key1:=Worksheets("EroSort").Range("P1"), _
+        order1:=xlDescending, Header:=xlYes
+End Sub
+    'Find a column
+    Sub findcol(ByVal Name As String, ByRef num As Integer)
+        For i = 1 To nrow
+        If Worksheets(Sname).Cells(1, i).Value = Name Then
+            num = i
+            Exit For
+        End If
+        Next i
+     End Sub
